@@ -1,24 +1,33 @@
-import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Plugin } from "@opencode/plugin/tui";
-import { DEFAULTS, fromFile, merge, parseArgs, toFile } from "./autocompact/config";
+import { advise, fromFile, persist, parseArgs, readDoc } from "./autocompact/config";
 import type { CompactionFile } from "./autocompact/config";
 
-const GLOBAL_CONFIG = join(homedir(), ".config", "opencode", "opencode.json");
+function resolveConfig(): string {
+  const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config", "opencode");
+  return join(base, "opencode.json");
+}
 
-async function persist(patch: { auto?: boolean; keepTokens?: number; buffer?: number }) {
-  const raw = await readFile(GLOBAL_CONFIG, "utf8");
-  const doc = JSON.parse(raw) as Record<string, unknown>;
-  const next = merge(fromFile((doc.compaction ?? {}) as CompactionFile), patch);
-  doc.compaction = toFile(next);
-  await writeFile(GLOBAL_CONFIG, JSON.stringify(doc, null, 2) + "\n");
-  return next;
+function friendly(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/ENOENT/.test(message)) return "config no encontrada: revisa XDG_CONFIG_HOME o ~/.config/opencode";
+  if (/SyntaxError|JSON/.test(message)) return `config ilegible: ${message}`;
+  return message;
 }
 
 export default Plugin.define({
   id: "autocompact.cli",
   setup(context) {
+    const statusLine = (): string => {
+      try {
+        const doc = readDoc(resolveConfig());
+        const current = fromFile((doc.compaction ?? {}) as CompactionFile);
+        return `auto:${current.auto ? "on" : "off"} keep:${current.keepTokens} buffer:${current.buffer}`;
+      } catch {
+        return "auto:? (config ilegible)";
+      }
+    };
     context.keymap.layer(() => ({
       mode: "global",
       commands: [
@@ -31,14 +40,11 @@ export default Plugin.define({
             try {
               action = parseArgs(input ?? "");
             } catch (error) {
-              await context.ui.dialog.alert({ title: "autocompact", message: String(error) });
+              await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
               return;
             }
             if (action.kind === "status") {
-              const current = { ...DEFAULTS };
-              context.ui.toast.show({
-                message: `auto:${current.auto ? "on" : "off"} keep:${current.keepTokens} buffer:${current.buffer}`,
-              });
+              context.ui.toast.show({ message: statusLine() });
               return;
             }
             const patch =
@@ -48,13 +54,16 @@ export default Plugin.define({
                   ? { keepTokens: action.value }
                   : { buffer: action.value };
             try {
-              const next = await persist(patch);
+              const next = await persist(resolveConfig(), patch);
+              for (const warning of advise(next, {})) {
+                context.ui.toast.show({ message: warning, variant: "warning" });
+              }
               context.ui.toast.show({
                 message: `autocompact actualizado auto:${next.auto ? "on" : "off"}`,
                 variant: "success",
               });
             } catch (error) {
-              await context.ui.dialog.alert({ title: "autocompact", message: String(error) });
+              await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
             }
           },
         },
@@ -62,7 +71,7 @@ export default Plugin.define({
     }));
     return context.ui.slot({
       append: "prompt.footer.status",
-      render: () => <text>auto:on</text>,
+      render: () => <text>{statusLine()}</text>,
     });
   },
 });
