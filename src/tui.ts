@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Plugin } from "@opencode/plugin/tui";
-import { createElement, insert } from "@opentui/solid";
+import { createElement, insert, setProp } from "@opentui/solid";
 import type { JSX } from "@opentui/solid";
 import {
   advise,
@@ -31,6 +31,19 @@ function textLine(get: () => string): JSX.Element {
   const node = createElement("text");
   insert(node, get);
   return node as unknown as JSX.Element;
+}
+
+function footerPill(muted: string, base: string, label: string, value: string): JSX.Element {
+  const box = createElement("box");
+  const left = createElement("text");
+  setProp(left, "fg", muted);
+  insert(left, label);
+  const right = createElement("text");
+  setProp(right, "fg", base);
+  insert(right, value);
+  insert(box, left);
+  insert(box, right);
+  return box as unknown as JSX.Element;
 }
 
 interface SeenLimit {
@@ -73,11 +86,20 @@ export default Plugin.define({
         const on = current.auto ? "on" : "off";
         if (sessionID) {
           const thresholdTokens = limitFor(sessionID);
-          if (thresholdTokens > 0) return `auto:${on} @${formatCount(thresholdTokens)}`;
+          if (thresholdTokens > 0) return `@${formatCount(thresholdTokens)}`;
         }
-        return `auto:${on} keep:${formatCount(current.keepTokens)} buffer:${formatCount(current.buffer)}`;
+        void on;
+        return `keep:${formatCount(current.keepTokens)} buffer:${formatCount(current.buffer)}`;
       } catch {
-        return "auto:? (config ilegible)";
+        return "";
+      }
+    };
+
+    const isOn = (): boolean => {
+      try {
+        return readCurrent().auto;
+      } catch {
+        return false;
       }
     };
 
@@ -100,7 +122,17 @@ export default Plugin.define({
                   return;
                 }
                 if (action.kind === "status") {
-                  context.ui.toast.show({ message: footerLine() });
+                  try {
+                    const current = readCurrent();
+                    const limit = seen.limit;
+                    const detail =
+                      limit > 0
+                        ? `${formatCount(limit)} − ${formatCount(current.buffer)} = @${formatCount(limit - current.buffer)}`
+                        : `keep:${formatCount(current.keepTokens)} buffer:${formatCount(current.buffer)}`;
+                    context.ui.toast.show({ message: `auto:${current.auto ? "on" : "off"}\n${detail}` });
+                  } catch (error) {
+                    await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
+                  }
                   return;
                 }
                 try {
@@ -154,7 +186,11 @@ export default Plugin.define({
     });
     const offFooter = context.ui.slot({
       append: "prompt.footer.status",
-      render: (input) => textLine(() => footerLine(input.sessionID)),
+      render: (input) => {
+        if (!isOn()) return textLine(() => "");
+        const theme = context.theme;
+        return footerPill(theme.text.muted, theme.text.base, "(autocompact ", `${footerLine(input.sessionID)})`);
+      },
     });
     return () => {
       offApp();
