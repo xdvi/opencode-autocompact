@@ -28,6 +28,12 @@ describe("parseArgs", () => {
     expect(() => parseArgs("keep 1 extra")).toThrow();
     expect(() => parseArgs("frobnicate")).toThrow();
   });
+  it("target acepta numero y sufijos k/m", () => {
+    expect(parseArgs("target 300000")).toEqual({ kind: "target", value: 300000 });
+    expect(parseArgs("target 300k")).toEqual({ kind: "target", value: 300000 });
+    expect(parseArgs("target 1m")).toEqual({ kind: "target", value: 1000000 });
+    expect(() => parseArgs("target abc")).toThrow();
+  });
 });
 
 describe("validate", () => {
@@ -119,5 +125,23 @@ describe("persist", () => {
     const path = join(dir, "opencode.jsonc");
     writeFileSync(path, `{\n// comentario\n"compaction": { "auto": false }\n}`);
     expect((readDoc(path).compaction as { auto: boolean }).auto).toBe(false);
+  });
+});
+
+describe("formatCount", () => {
+  it("humaniza miles y millones", async () => {
+    const { formatCount } = await import("../src/autocompact/config");
+    expect(formatCount(300000)).toBe("300k");
+    expect(formatCount(15000)).toBe("15k");
+    expect(formatCount(1000000)).toBe("1M");
+    expect(formatCount(950)).toBe("950");
+  });
+});
+
+describe("bufferForTarget", () => {
+  it("despeja buffer desde limite y target", async () => {
+    const { bufferForTarget } = await import("../src/autocompact/config");
+    expect(bufferForTarget(1000000, 300000)).toBe(700000);
+    expect(() => bufferForTarget(1000000, 1000000)).toThrow();
   });
 });

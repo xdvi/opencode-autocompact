@@ -12,24 +12,50 @@ export type ConfigAction =
   | { kind: "status" }
   | { kind: "auto"; value: boolean }
   | { kind: "keep"; value: number }
-  | { kind: "buffer"; value: number };
+  | { kind: "buffer"; value: number }
+  | { kind: "target"; value: number };
+
+function parseCount(raw: string): number {
+  const match = /^(\d+(?:\.\d+)?)(k|m)?$/i.exec(raw.trim());
+  if (!match) throw new Error(`"${raw}" no es un número (usa 300000, 300k o 1m)`);
+  const base = Number(match[1]);
+  const suffix = (match[2] ?? "").toLowerCase();
+  const value = base * (suffix === "m" ? 1000000 : suffix === "k" ? 1000 : 1);
+  if (!Number.isFinite(value)) throw new Error(`"${raw}" no es un número`);
+  return Math.round(value);
+}
+
+export function formatCount(n: number): string {
+  if (n >= 1000000 && n % 1000000 === 0) return `${n / 1000000}M`;
+  if (n >= 1000 && n % 1000 === 0) return `${n / 1000}k`;
+  return String(n);
+}
+
+export function bufferForTarget(limit: number, target: number): number {
+  const buffer = limit - target;
+  if (!Number.isInteger(buffer) || buffer <= 0) {
+    throw new Error(`target debe ser menor que el límite ${formatCount(limit)}`);
+  }
+  return buffer;
+}
 
 export function parseArgs(input: string): ConfigAction {
   const parts = input.trim().split(/\s+/).filter((p) => p.length > 0);
   if (parts.length === 0 || parts[0] === "status") {
-    if (parts.length > 1) throw new Error("uso: /autocompact [on|off|status|keep <n>|buffer <n>]");
+    if (parts.length > 1) throw new Error("uso: /autocompact [on|off|status|keep <n>|buffer <n>|target <n>]");
     return { kind: "status" };
   }
   const [cmd, raw, ...rest] = parts;
-  if (rest.length > 0) throw new Error("uso: /autocompact [on|off|status|keep <n>|buffer <n>]");
+  if (rest.length > 0) throw new Error("uso: /autocompact [on|off|status|keep <n>|buffer <n>|target <n>]");
   if (cmd === "on" && raw === undefined) return { kind: "auto", value: true };
   if (cmd === "off" && raw === undefined) return { kind: "auto", value: false };
   if ((cmd === "keep" || cmd === "buffer") && raw !== undefined) {
-    const value = Number(raw);
-    if (!Number.isFinite(value)) throw new Error(`${cmd} debe ser un número`);
-    return { kind: cmd, value } as ConfigAction;
+    return { kind: cmd, value: parseCount(raw) } as ConfigAction;
   }
-  throw new Error("uso: /autocompact [on|off|status|keep <n>|buffer <n>]");
+  if (cmd === "target" && raw !== undefined) {
+    return { kind: "target", value: parseCount(raw) };
+  }
+  throw new Error("uso: /autocompact [on|off|status|keep <n>|buffer <n>|target <n>]");
 }
 
 export function validate(entry: CompactionConfig, _ceiling?: number): string[] {
