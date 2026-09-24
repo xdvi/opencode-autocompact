@@ -28,6 +28,7 @@ function parseCount(raw: string): number {
 export function formatCount(n: number): string {
   if (n >= 1000000 && n % 1000000 === 0) return `${n / 1000000}M`;
   if (n >= 1000 && n % 1000 === 0) return `${n / 1000}k`;
+  if (n >= 1000) return `~${Math.round(n / 1000)}k`;
   return String(n);
 }
 

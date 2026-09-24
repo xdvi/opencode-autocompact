@@ -135,6 +135,7 @@ describe("formatCount", () => {
     expect(formatCount(15000)).toBe("15k");
     expect(formatCount(1000000)).toBe("1M");
     expect(formatCount(950)).toBe("950");
+    expect(formatCount(348576)).toBe("~349k");
   });
 });
 

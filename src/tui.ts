@@ -35,6 +35,7 @@ function textLine(get: () => string): JSX.Element {
 
 function footerPill(muted: string, base: string, label: string, value: string): JSX.Element {
   const box = createElement("box");
+  setProp(box, "flexDirection", "row");
   const left = createElement("text");
   setProp(left, "fg", muted);
   insert(left, label);
