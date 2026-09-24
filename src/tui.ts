@@ -18,25 +18,26 @@ function friendly(error: unknown): string {
   return message;
 }
 
-function statusLine(): string {
-  try {
-    const doc = readDoc(resolveConfig());
-    const current = fromFile((doc.compaction ?? {}) as CompactionFile);
-    return `auto:${current.auto ? "on" : "off"} keep:${current.keepTokens} buffer:${current.buffer}`;
-  } catch {
-    return "auto:? (config ilegible)";
-  }
-}
-
 function textLine(get: () => string): JSX.Element {
   const node = createElement("text");
-  insert(node, get());
+  insert(node, get);
   return node as unknown as JSX.Element;
 }
 
 export default Plugin.define({
   id: "autocompact.cli",
   setup(context) {
+    const [state, setState] = context.storage.store("autocompact", { initial: { rev: 0 } });
+    const statusLine = (): string => {
+      state.rev;
+      try {
+        const doc = readDoc(resolveConfig());
+        const current = fromFile((doc.compaction ?? {}) as CompactionFile);
+        return `auto:${current.auto ? "on" : "off"} keep:${current.keepTokens} buffer:${current.buffer}`;
+      } catch {
+        return "auto:? (config ilegible)";
+      }
+    };
     const offApp = context.ui.slot({
       append: "app",
       render: () => {
@@ -67,6 +68,9 @@ export default Plugin.define({
                       : { buffer: action.value };
                 try {
                   const next = await persist(resolveConfig(), patch);
+                  await setState((draft) => {
+                    draft.rev += 1;
+                  });
                   for (const warning of advise(next, {})) {
                     context.ui.toast.show({ message: warning, variant: "warning" });
                   }
