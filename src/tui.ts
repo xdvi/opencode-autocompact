@@ -188,7 +188,7 @@ export default Plugin.define({
     const offFooter = context.ui.slot({
       append: "prompt.footer.status",
       render: (input) => {
-        if (!isOn()) return textLine(() => "");
+        if (!input.sessionID || !isOn()) return textLine(() => "");
         const theme = context.theme;
         return footerPill(theme.text.muted, theme.text.base, "(autocompact ", `${footerLine(input.sessionID)})`);
       },
