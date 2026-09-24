@@ -37,50 +37,60 @@ function textLine(get: () => string): JSX.Element {
 export default Plugin.define({
   id: "autocompact.cli",
   setup(context) {
-    context.keymap.layer(() => ({
-      mode: "global",
-      commands: [
-        {
-          id: "autocompact.run",
-          title: "autocompact on|off|status|keep|buffer",
-          slash: { name: "autocompact", arguments: true },
-          run: async (input) => {
-            let action;
-            try {
-              action = parseArgs(input ?? "");
-            } catch (error) {
-              await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
-              return;
-            }
-            if (action.kind === "status") {
-              context.ui.toast.show({ message: statusLine() });
-              return;
-            }
-            const patch =
-              action.kind === "auto"
-                ? { auto: action.value }
-                : action.kind === "keep"
-                  ? { keepTokens: action.value }
-                  : { buffer: action.value };
-            try {
-              const next = await persist(resolveConfig(), patch);
-              for (const warning of advise(next, {})) {
-                context.ui.toast.show({ message: warning, variant: "warning" });
-              }
-              context.ui.toast.show({
-                message: `autocompact actualizado auto:${next.auto ? "on" : "off"}`,
-                variant: "success",
-              });
-            } catch (error) {
-              await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
-            }
-          },
-        },
-      ],
-    }));
-    return context.ui.slot({
+    const offApp = context.ui.slot({
+      append: "app",
+      render: () => {
+        context.keymap.layer(() => ({
+          mode: "global",
+          commands: [
+            {
+              id: "autocompact.run",
+              title: "autocompact on|off|status|keep|buffer",
+              slash: { name: "autocompact", arguments: true },
+              run: async (input) => {
+                let action;
+                try {
+                  action = parseArgs(input ?? "");
+                } catch (error) {
+                  await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
+                  return;
+                }
+                if (action.kind === "status") {
+                  context.ui.toast.show({ message: statusLine() });
+                  return;
+                }
+                const patch =
+                  action.kind === "auto"
+                    ? { auto: action.value }
+                    : action.kind === "keep"
+                      ? { keepTokens: action.value }
+                      : { buffer: action.value };
+                try {
+                  const next = await persist(resolveConfig(), patch);
+                  for (const warning of advise(next, {})) {
+                    context.ui.toast.show({ message: warning, variant: "warning" });
+                  }
+                  context.ui.toast.show({
+                    message: `autocompact actualizado auto:${next.auto ? "on" : "off"}`,
+                    variant: "success",
+                  });
+                } catch (error) {
+                  await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
+                }
+              },
+            },
+          ],
+        }));
+        return textLine(() => "");
+      },
+    });
+    const offFooter = context.ui.slot({
       append: "prompt.footer.status",
       render: () => textLine(statusLine),
     });
+    return () => {
+      offApp();
+      offFooter();
+    };
   },
 });
