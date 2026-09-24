@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Plugin } from "@opencode/plugin/tui";
+import { createElement, insert } from "@opentui/solid";
+import type { JSX } from "@opentui/solid";
 import { advise, fromFile, persist, parseArgs, readDoc } from "./autocompact/config";
 import type { CompactionFile } from "./autocompact/config";
 
@@ -16,18 +18,25 @@ function friendly(error: unknown): string {
   return message;
 }
 
+function statusLine(): string {
+  try {
+    const doc = readDoc(resolveConfig());
+    const current = fromFile((doc.compaction ?? {}) as CompactionFile);
+    return `auto:${current.auto ? "on" : "off"} keep:${current.keepTokens} buffer:${current.buffer}`;
+  } catch {
+    return "auto:? (config ilegible)";
+  }
+}
+
+function textLine(get: () => string): JSX.Element {
+  const node = createElement("text");
+  insert(node, get());
+  return node as unknown as JSX.Element;
+}
+
 export default Plugin.define({
   id: "autocompact.cli",
   setup(context) {
-    const statusLine = (): string => {
-      try {
-        const doc = readDoc(resolveConfig());
-        const current = fromFile((doc.compaction ?? {}) as CompactionFile);
-        return `auto:${current.auto ? "on" : "off"} keep:${current.keepTokens} buffer:${current.buffer}`;
-      } catch {
-        return "auto:? (config ilegible)";
-      }
-    };
     context.keymap.layer(() => ({
       mode: "global",
       commands: [
@@ -71,7 +80,7 @@ export default Plugin.define({
     }));
     return context.ui.slot({
       append: "prompt.footer.status",
-      render: () => <text>{statusLine()}</text>,
+      render: () => textLine(statusLine),
     });
   },
 });
