@@ -62,12 +62,39 @@ export default Plugin.define({
       return fromFile((doc.compaction ?? {}) as CompactionFile);
     };
 
+    const syncTried = { sessions: new Set<string>(), models: false };
+
+    const bumpRev = (): void => {
+      void setState((draft) => {
+        draft.rev += 1;
+      });
+    };
+
+    const currentSessionID = (preferred?: string): string | undefined => {
+      if (preferred && context.data.session.get(preferred)) return preferred;
+      const all = context.data.session.list() ?? [];
+      if (all.length === 0) return preferred;
+      const ranked = [...all].sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0));
+      return ranked[0]?.id ?? preferred;
+    };
+
     const limitFor = (sessionID?: string): number => {
-      if (!sessionID) return 0;
-      const session = context.data.session.get(sessionID);
+      const sid = currentSessionID(sessionID);
+      if (!sid) return 0;
+      const session = context.data.session.get(sid);
       const ref = session?.model;
-      if (!ref) return 0;
+      if (!ref) {
+        if (!syncTried.sessions.has(sid)) {
+          syncTried.sessions.add(sid);
+          void context.data.session.sync(sid).then(bumpRev).catch(() => {});
+        }
+        return 0;
+      }
       const models = context.data.location.model.list(context.location) ?? [];
+      if (models.length === 0 && !syncTried.models) {
+        syncTried.models = true;
+        void context.data.location.model.sync(context.location).then(bumpRev).catch(() => {});
+      }
       const info = models.find((m) => m.providerID === ref.providerID && m.id === ref.id);
       const contextLimit = info?.limit.context ?? 0;
       if (contextLimit <= 0) return 0;
@@ -117,6 +144,7 @@ export default Plugin.define({
           }
           if (action.kind === "status") {
             try {
+              if (seen.limit <= 0) limitFor(currentSessionID());
               const current = readCurrent();
               const limit = seen.limit;
               const detail =
@@ -131,7 +159,8 @@ export default Plugin.define({
           }
           try {
             if (action.kind === "target") {
-              const limit = seen.limit;
+              let limit = seen.limit;
+              if (limit <= 0) limit = limitFor(currentSessionID());
               if (limit <= 0) {
                 await context.ui.dialog.alert({
                   title: "autocompact",
