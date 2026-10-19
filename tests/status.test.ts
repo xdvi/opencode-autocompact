@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { threshold, usagePct, tone } from "../src/autocompact/status";
+import { threshold, usagePct, tone, autoBuffer } from "../src/autocompact/status";
 
 describe("threshold", () => {
   it("usa input limit menos buffer", () => {
@@ -23,3 +23,18 @@ describe("tone", () => {
     expect(tone(95)).toBe("hot");
   });
 });
+
+describe("autoBuffer", () => {
+  it("tunes buffer for small models", () => {
+    expect(autoBuffer(8000)).toBe(2000);
+    expect(autoBuffer(32000)).toBe(4800);
+  });
+  it("tunes buffer for 128k and 200k models", () => {
+    expect(autoBuffer(128000)).toBe(19200);
+    expect(autoBuffer(200000)).toBe(20000);
+  });
+  it("caps buffer for 1M+ models", () => {
+    expect(autoBuffer(1000000)).toBe(50000);
+  });
+});
+

@@ -43,20 +43,26 @@ export function bufferForTarget(limit: number, target: number): number {
 export function parseArgs(input: string): ConfigAction {
   const parts = input.trim().split(/\s+/).filter((p) => p.length > 0);
   if (parts.length === 0 || parts[0] === "status") {
-    if (parts.length > 1) throw new Error("uso: /autocompact [on|off|status|keep <n>|buffer <n>|target <n>]");
+    if (parts.length > 1) throw new Error("uso: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n>]");
     return { kind: "status" };
   }
   const [cmd, raw, ...rest] = parts;
-  if (rest.length > 0) throw new Error("uso: /autocompact [on|off|status|keep <n>|buffer <n>|target <n>]");
-  if (cmd === "on" && raw === undefined) return { kind: "auto", value: true };
-  if (cmd === "off" && raw === undefined) return { kind: "auto", value: false };
-  if ((cmd === "keep" || cmd === "buffer") && raw !== undefined) {
-    return { kind: cmd, value: parseCount(raw) } as ConfigAction;
+  if (rest.length > 0) throw new Error("uso: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n>]");
+  const normalized = cmd.toLowerCase();
+  if ((normalized === "on" || normalized === "auto" || normalized === "reset" || normalized === "default") && raw === undefined) {
+    return { kind: "auto", value: true };
   }
-  if (cmd === "target" && raw !== undefined) {
+  if (normalized === "off" && raw === undefined) return { kind: "auto", value: false };
+  if ((normalized === "keep" || normalized === "buffer") && raw !== undefined) {
+    return { kind: normalized as "keep" | "buffer", value: parseCount(raw) };
+  }
+  if (normalized === "target" && raw !== undefined) {
     return { kind: "target", value: parseCount(raw) };
   }
-  throw new Error("uso: /autocompact [on|off|status|keep <n>|buffer <n>|target <n>]");
+  if (raw === undefined && /^(\d+(?:\.\d+)?)(k|m)?$/i.test(cmd)) {
+    return { kind: "target", value: parseCount(cmd) };
+  }
+  throw new Error("uso: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n>]");
 }
 
 export function validate(entry: CompactionConfig, _ceiling?: number): string[] {

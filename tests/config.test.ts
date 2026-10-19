@@ -34,6 +34,13 @@ describe("parseArgs", () => {
     expect(parseArgs("target 1m")).toEqual({ kind: "target", value: 1000000 });
     expect(() => parseArgs("target abc")).toThrow();
   });
+  it("admite comandos estilo claude-code: auto, reset, direct token counts", () => {
+    expect(parseArgs("auto")).toEqual({ kind: "auto", value: true });
+    expect(parseArgs("reset")).toEqual({ kind: "auto", value: true });
+    expect(parseArgs("default")).toEqual({ kind: "auto", value: true });
+    expect(parseArgs("500k")).toEqual({ kind: "target", value: 500000 });
+    expect(parseArgs("200000")).toEqual({ kind: "target", value: 200000 });
+  });
 });
 
 describe("validate", () => {

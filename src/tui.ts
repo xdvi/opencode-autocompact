@@ -13,7 +13,7 @@ import {
   readDoc,
 } from "./autocompact/config";
 import type { CompactionFile } from "./autocompact/config";
-import { threshold } from "./autocompact/status";
+import { threshold, autoBuffer } from "./autocompact/status";
 
 function resolveConfig(): string {
   const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config", "opencode");
@@ -180,12 +180,21 @@ export default Plugin.define({
               void next;
               return;
             }
-            const patch =
-              action.kind === "auto"
-                ? { auto: action.value }
-                : action.kind === "keep"
-                  ? { keepTokens: action.value }
-                  : { buffer: action.value };
+            let patch: Partial<import("./autocompact/config").CompactionConfig>;
+            if (action.kind === "auto") {
+              patch = { auto: action.value };
+              if (action.value) {
+                let limit = seen.limit;
+                if (limit <= 0) limit = limitFor(currentSessionID());
+                if (limit > 0) {
+                  patch.buffer = autoBuffer(limit);
+                }
+              }
+            } else if (action.kind === "keep") {
+              patch = { keepTokens: action.value };
+            } else {
+              patch = { buffer: action.value };
+            }
             const next = await persist(resolveConfig(), patch);
             await setState((draft) => {
               draft.rev += 1;
@@ -193,8 +202,9 @@ export default Plugin.define({
             for (const warning of advise(next, {})) {
               context.ui.toast.show({ message: warning, variant: "warning" });
             }
+            const bufferNote = patch.buffer ? ` buffer:${formatCount(patch.buffer)}` : "";
             context.ui.toast.show({
-              message: `autocompact actualizado auto:${next.auto ? "on" : "off"}`,
+              message: `autocompact actualizado auto:${next.auto ? "on" : "off"}${bufferNote}`,
               variant: "success",
             });
           } catch (error) {
