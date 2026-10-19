@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createModalState } from "../src/autocompact/modal";
+import { createModalState, renderModal } from "../src/autocompact/modal";
 
 describe("createModalState", () => {
   it("initializes percent and auto from current configuration", () => {
@@ -103,5 +103,28 @@ describe("createModalState", () => {
     await state.handleKey("escape");
     expect(onSave).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("renders modal structure without throwing when renderer is provided", () => {
+    const mockRenderer = {
+      requestRender: vi.fn(),
+      widthMethod: 0,
+      keyInput: { on: vi.fn(), off: vi.fn() },
+      registerLifecyclePass: vi.fn(),
+      unregisterLifecyclePass: vi.fn(),
+    };
+
+    const modal = renderModal({
+      renderer: mockRenderer,
+      modelName: "llama-3.3-70b",
+      contextLimit: 128000,
+      current: { auto: true, buffer: 25600, keepTokens: 15000 },
+      theme: { text: { base: "#fff", muted: "#888" } },
+      onSave: vi.fn(),
+      onClose: vi.fn(),
+      toast: vi.fn(),
+    });
+
+    expect(modal).toBeDefined();
   });
 });

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 vi.mock("@opentui/solid", () => ({
+  RendererContext: { Provider: (props: any) => (typeof props.children === "function" ? props.children() : props.children) },
   createElement: vi.fn((tag: string) => ({ tag, props: {} as Record<string, any>, children: [] as any[] })),
   insert: vi.fn((parent: any, child: any) => {
     parent.children.push(typeof child === "function" ? child() : child);

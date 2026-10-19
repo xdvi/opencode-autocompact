@@ -1,8 +1,9 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Plugin } from "@opencode/plugin/tui";
-import { createElement, insert, setProp } from "@opentui/solid";
+import { RendererContext, createElement, insert, setProp } from "@opentui/solid";
 import type { JSX } from "@opentui/solid";
+import { createComponent } from "solid-js";
 import {
   advise,
   bufferForTarget,
@@ -26,6 +27,16 @@ function friendly(error: unknown): string {
   if (/ENOENT/.test(message)) return "config not found: check XDG_CONFIG_HOME or ~/.config/opencode";
   if (/SyntaxError|JSON/.test(message)) return `unreadable config: ${message}`;
   return message;
+}
+
+function withRenderer(renderer: unknown, render: () => JSX.Element): JSX.Element {
+  if (!renderer) return render();
+  return createComponent(RendererContext.Provider, {
+    value: renderer as any,
+    get children() {
+      return render();
+    },
+  }) as unknown as JSX.Element;
 }
 
 function textLine(get: () => string): JSX.Element {
@@ -53,6 +64,7 @@ interface SeenLimit {
 }
 
 export interface ActionContext {
+  renderer?: unknown;
   getLimit: () => number;
   getModelName: () => string;
   readCurrent: () => CompactionConfig;
@@ -80,6 +92,7 @@ export const ACTION_HANDLERS: { [K in ConfigAction["kind"]]: ActionHandler<K> } 
     const modelName = ctx.getModelName();
     ctx.showModal(() =>
       renderModal({
+        renderer: ctx.renderer,
         modelName,
         contextLimit: limit,
         current,
@@ -275,6 +288,7 @@ export default Plugin.define({
     };
 
     const actionContext: ActionContext = {
+      renderer: context.renderer,
       getLimit: ensureLimit,
       getModelName,
       readCurrent,
@@ -296,7 +310,7 @@ export default Plugin.define({
       },
       showModal: (render, onClose) => {
         context.ui.dialog.set({ size: "medium", centered: true });
-        context.ui.dialog.show(render, onClose);
+        context.ui.dialog.show(() => withRenderer(context.renderer, render), onClose);
       },
       closeModal: () => {
         context.ui.dialog.clear();
@@ -340,15 +354,17 @@ export default Plugin.define({
             run: spec.run,
           })),
         }));
-        return textLine(() => "");
+        return withRenderer(context.renderer, () => textLine(() => ""));
       },
     });
     const offFooter = context.ui.slot({
       append: "prompt.footer.status",
       render: (input) => {
-        if (!input.sessionID || !isOn()) return textLine(() => "");
-        const theme = context.theme;
-        return footerPill(theme.text.muted, theme.text.base, "(autocompact ", `${footerLine(input.sessionID)})`);
+        return withRenderer(context.renderer, () => {
+          if (!input.sessionID || !isOn()) return textLine(() => "");
+          const theme = context.theme;
+          return footerPill(theme.text.muted, theme.text.base, "(autocompact ", `${footerLine(input.sessionID)})`);
+        });
       },
     });
     return () => {

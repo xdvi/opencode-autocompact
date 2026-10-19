@@ -1,12 +1,12 @@
-import { createElement, insert, setProp } from "@opentui/solid";
-import { useKeyboard } from "@opentui/solid";
+import { RendererContext, createElement, insert, setProp, useKeyboard } from "@opentui/solid";
 import type { JSX } from "@opentui/solid";
-import { createSignal } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import type { CompactionConfig } from "./config";
 import { formatCount } from "./config";
 import { autoBuffer, bufferForPercent, renderProgressBar } from "./status";
 
 export interface ModalOptions {
+  renderer?: unknown;
   modelName: string;
   contextLimit: number;
   current: CompactionConfig;
@@ -84,95 +84,108 @@ function makeText(get: () => string, fg?: string): JSX.Element {
 }
 
 export function renderModal(options: ModalOptions): JSX.Element {
-  const state = createModalState(options);
+  const build = (): JSX.Element => {
+    const state = createModalState(options);
 
-  try {
-    useKeyboard((key) => {
-      void state.handleKey(key.name);
-    });
-  } catch {
-    // When rendered outside full TUI environment (e.g. testing)
+    try {
+      useKeyboard((key) => {
+        void state.handleKey(key.name);
+      });
+    } catch {
+      // When rendered outside full TUI environment (e.g. testing)
+    }
+
+    const muted = options.theme.text.muted;
+    const base = options.theme.text.base;
+
+    const box = createElement("box");
+    setProp(box, "borderStyle", "rounded");
+    setProp(box, "borderColor", options.theme.border?.base ?? muted);
+    setProp(box, "flexDirection", "column");
+    setProp(box, "paddingLeft", 2);
+    setProp(box, "paddingRight", 2);
+    setProp(box, "paddingTop", 1);
+    setProp(box, "paddingBottom", 1);
+    setProp(box, "width", 68);
+
+    // Line 1: Header title
+    insert(
+      box,
+      makeText(
+        () => `Model: ${options.modelName} (Context: ${formatCount(options.contextLimit)})`,
+        base,
+      ),
+    );
+
+    // Line 2: Empty spacer
+    insert(box, makeText(() => " "));
+
+    // Line 3: Target threshold
+    insert(
+      box,
+      makeText(
+        () =>
+          `Target threshold:  ${state.percent()}%  (${formatCount(state.targetTokens())} tokens)${state.isAuto() ? " ⚡auto" : ""}`,
+        base,
+      ),
+    );
+
+    // Line 4: Empty spacer
+    insert(box, makeText(() => " "));
+
+    // Line 5: Interactive Slider
+    insert(
+      box,
+      makeText(
+        () => `[◀]  [${state.progressBar()}]  ${state.percent()}%  [▶]  (Step: ±5%)`,
+        base,
+      ),
+    );
+
+    // Line 6: Empty spacer
+    insert(box, makeText(() => " "));
+
+    // Line 7: Buffer info
+    insert(
+      box,
+      makeText(
+        () => `Free margin (buffer):  ${formatCount(state.bufferTokens())} tokens`,
+        muted,
+      ),
+    );
+
+    // Line 8: Keep info
+    insert(
+      box,
+      makeText(
+        () => `Retained context:      ${formatCount(options.current.keepTokens)} tokens`,
+        muted,
+      ),
+    );
+
+    // Line 9: Empty spacer
+    insert(box, makeText(() => " "));
+
+    // Line 10: Shortcut buttons
+    insert(
+      box,
+      makeText(
+        () => `[Enter] Apply   [A] Reset to Auto   [Esc] Close`,
+        muted,
+      ),
+    );
+
+    return box as unknown as JSX.Element;
+  };
+
+  if (options.renderer) {
+    return createComponent(RendererContext.Provider, {
+      value: options.renderer as any,
+      get children() {
+        return build();
+      },
+    }) as unknown as JSX.Element;
   }
 
-  const muted = options.theme.text.muted;
-  const base = options.theme.text.base;
-
-  const box = createElement("box");
-  setProp(box, "borderStyle", "rounded");
-  setProp(box, "borderColor", options.theme.border?.base ?? muted);
-  setProp(box, "flexDirection", "column");
-  setProp(box, "paddingLeft", 2);
-  setProp(box, "paddingRight", 2);
-  setProp(box, "paddingTop", 1);
-  setProp(box, "paddingBottom", 1);
-  setProp(box, "width", 68);
-
-  // Line 1: Header title
-  insert(
-    box,
-    makeText(
-      () => `Model: ${options.modelName} (Context: ${formatCount(options.contextLimit)})`,
-      base,
-    ),
-  );
-
-  // Line 2: Empty spacer
-  insert(box, makeText(() => " "));
-
-  // Line 3: Target threshold
-  insert(
-    box,
-    makeText(
-      () =>
-        `Target threshold:  ${state.percent()}%  (${formatCount(state.targetTokens())} tokens)${state.isAuto() ? " ⚡auto" : ""}`,
-      base,
-    ),
-  );
-
-  // Line 4: Empty spacer
-  insert(box, makeText(() => " "));
-
-  // Line 5: Interactive Slider
-  insert(
-    box,
-    makeText(
-      () => `[◀]  [${state.progressBar()}]  ${state.percent()}%  [▶]  (Step: ±5%)`,
-      base,
-    ),
-  );
-
-  // Line 6: Empty spacer
-  insert(box, makeText(() => " "));
-
-  // Line 7: Buffer info
-  insert(
-    box,
-    makeText(
-      () => `Free margin (buffer):  ${formatCount(state.bufferTokens())} tokens`,
-      muted,
-    ),
-  );
-
-  // Line 8: Keep info
-  insert(
-    box,
-    makeText(
-      () => `Retained context:      ${formatCount(options.current.keepTokens)} tokens`,
-      muted,
-    ),
-  );
-
-  // Line 9: Empty spacer
-  insert(box, makeText(() => " "));
-
-  // Line 10: Shortcut buttons
-  insert(
-    box,
-    makeText(
-      () => `[Enter] Apply   [A] Reset to Auto   [Esc] Close`,
-      muted,
-    ),
-  );
-
-  return box as unknown as JSX.Element;
+  return build();
 }
