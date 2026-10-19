@@ -13,7 +13,7 @@ import {
   readDoc,
 } from "./autocompact/config";
 import type { CompactionFile } from "./autocompact/config";
-import { threshold, autoBuffer } from "./autocompact/status";
+import { threshold, autoBuffer, bufferForPercent, renderProgressBar } from "./autocompact/status";
 
 function resolveConfig(): string {
   const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config", "opencode");
@@ -22,8 +22,8 @@ function resolveConfig(): string {
 
 function friendly(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  if (/ENOENT/.test(message)) return "config no encontrada: revisa XDG_CONFIG_HOME o ~/.config/opencode";
-  if (/SyntaxError|JSON/.test(message)) return `config ilegible: ${message}`;
+  if (/ENOENT/.test(message)) return "config not found: check XDG_CONFIG_HOME or ~/.config/opencode";
+  if (/SyntaxError|JSON/.test(message)) return `unreadable config: ${message}`;
   return message;
 }
 
@@ -107,16 +107,44 @@ export default Plugin.define({
       return threshold(inputLimit, contextLimit, info?.limit.output ?? 32000, current.buffer);
     };
 
+    const tokensFor = (sessionID?: string): number => {
+      const sid = currentSessionID(sessionID);
+      if (!sid) return 0;
+      try {
+        const messages = context.data.session.message.list(sid) ?? [];
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i];
+          if (msg.type === "assistant" && "tokens" in msg && msg.tokens) {
+            const input = msg.tokens.input ?? 0;
+            const cacheRead = msg.tokens.cache?.read ?? 0;
+            return input + cacheRead;
+          }
+        }
+      } catch {
+        // message list unavailable
+      }
+      const session = context.data.session.get(sid);
+      return session?.tokens?.input ?? 0;
+    };
+
     const footerLine = (sessionID?: string): string => {
       state.rev;
       try {
         const current = readCurrent();
-        const on = current.auto ? "on" : "off";
         if (sessionID) {
           const thresholdTokens = limitFor(sessionID);
-          if (thresholdTokens > 0) return `@${formatCount(thresholdTokens)}`;
+          if (thresholdTokens > 0) {
+            const used = tokensFor(sessionID);
+            const mode = current.auto ? "⚡auto" : "off";
+            if (used > 0) {
+              const limit = seen.limit > 0 ? seen.limit : thresholdTokens + current.buffer;
+              const usedPct = Math.round((used / limit) * 100);
+              const bar = renderProgressBar(used, thresholdTokens, 8);
+              return `[${bar} ${usedPct}% @${formatCount(thresholdTokens)}] ${mode}`;
+            }
+            return `[@${formatCount(thresholdTokens)}] ${mode}`;
+          }
         }
-        void on;
         return `keep:${formatCount(current.keepTokens)} buffer:${formatCount(current.buffer)}`;
       } catch {
         return "";
@@ -158,23 +186,31 @@ export default Plugin.define({
             return;
           }
           try {
-            if (action.kind === "target") {
+            if (action.kind === "target" || action.kind === "percent") {
               let limit = seen.limit;
               if (limit <= 0) limit = limitFor(currentSessionID());
               if (limit <= 0) {
                 await context.ui.dialog.alert({
                   title: "autocompact",
-                  message: "sin modelo detectado: abre una sesión primero",
+                  message: "no model detected: open a session first",
                 });
                 return;
               }
-              const buffer = bufferForTarget(limit, action.value);
+              let buffer: number;
+              let targetDisplay: string;
+              if (action.kind === "percent") {
+                buffer = bufferForPercent(limit, action.value);
+                targetDisplay = `${action.value}% (@${formatCount(limit - buffer)})`;
+              } else {
+                buffer = bufferForTarget(limit, action.value);
+                targetDisplay = `@${formatCount(action.value)}`;
+              }
               const next = await persist(resolveConfig(), { buffer });
               await setState((draft) => {
                 draft.rev += 1;
               });
               context.ui.toast.show({
-                message: `${formatCount(limit)} − ${formatCount(buffer)} = @${formatCount(action.value)}`,
+                message: `${formatCount(limit)} − ${formatCount(buffer)} = ${targetDisplay}`,
                 variant: "success",
               });
               void next;
@@ -204,7 +240,7 @@ export default Plugin.define({
             }
             const bufferNote = patch.buffer ? ` buffer:${formatCount(patch.buffer)}` : "";
             context.ui.toast.show({
-              message: `autocompact actualizado auto:${next.auto ? "on" : "off"}${bufferNote}`,
+              message: `autocompact updated auto:${next.auto ? "on" : "off"}${bufferNote}`,
               variant: "success",
             });
           } catch (error) {
@@ -216,7 +252,7 @@ export default Plugin.define({
           commands: [
             {
               id: "autocompact.run",
-              title: "autocompact on|off|status|keep|buffer|target",
+              title: "autocompact on|off|status|reset|keep|buffer|target",
               slash: { name: "autocompact", arguments: true },
               run: (input) => runAction(input),
             },
@@ -233,6 +269,12 @@ export default Plugin.define({
               run: () => runAction("off"),
             },
             {
+              id: "autocompact.reset",
+              title: "autocompact reset",
+              slash: { name: "autocompact:reset" },
+              run: () => runAction("reset"),
+            },
+            {
               id: "autocompact.status",
               title: "autocompact status",
               slash: { name: "autocompact:status" },
@@ -240,7 +282,7 @@ export default Plugin.define({
             },
             {
               id: "autocompact.target",
-              title: "autocompact target <n>",
+              title: "autocompact target <n|pct%>",
               slash: { name: "autocompact:target", arguments: true },
               run: (input) => runAction(`target ${input ?? ""}`),
             },

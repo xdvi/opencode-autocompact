@@ -32,3 +32,23 @@ export function autoBuffer(contextLimit: number): number {
   return Math.min(50000, Math.round(contextLimit * 0.1));
 }
 
+export function bufferForPercent(limit: number, percent: number): number {
+  if (!Number.isFinite(percent) || percent <= 0 || percent >= 100) {
+    throw new Error(`percent must be between 1 and 99 (received ${percent}%)`);
+  }
+  const target = Math.round((limit * percent) / 100);
+  const buffer = limit - target;
+  if (!Number.isInteger(buffer) || buffer <= 0) {
+    throw new Error(`calculated buffer must be a positive integer`);
+  }
+  return buffer;
+}
+
+export function renderProgressBar(used: number, target: number, width = 10): string {
+  if (target <= 0) return "░".repeat(width);
+  const ratio = Math.min(1, Math.max(0, used / target));
+  const filled = Math.round(ratio * width);
+  return "█".repeat(filled) + "░".repeat(width - filled);
+}
+
+

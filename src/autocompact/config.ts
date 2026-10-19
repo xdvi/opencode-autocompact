@@ -13,15 +13,26 @@ export type ConfigAction =
   | { kind: "auto"; value: boolean }
   | { kind: "keep"; value: number }
   | { kind: "buffer"; value: number }
-  | { kind: "target"; value: number };
+  | { kind: "target"; value: number }
+  | { kind: "percent"; value: number };
+
+function parsePercent(raw: string): number {
+  const match = /^(\d+(?:\.\d+)?)%$/.exec(raw.trim());
+  if (!match) throw new Error(`"${raw}" is not a valid percentage (use e.g. 80%)`);
+  const val = Number(match[1]);
+  if (!Number.isFinite(val) || val <= 0 || val >= 100) {
+    throw new Error(`percentage must be between 1 and 99 (received ${raw})`);
+  }
+  return Math.round(val);
+}
 
 function parseCount(raw: string): number {
   const match = /^(\d+(?:\.\d+)?)(k|m)?$/i.exec(raw.trim());
-  if (!match) throw new Error(`"${raw}" no es un número (usa 300000, 300k o 1m)`);
+  if (!match) throw new Error(`"${raw}" is not a valid number (use e.g. 300000, 300k, or 1m)`);
   const base = Number(match[1]);
   const suffix = (match[2] ?? "").toLowerCase();
   const value = base * (suffix === "m" ? 1000000 : suffix === "k" ? 1000 : 1);
-  if (!Number.isFinite(value)) throw new Error(`"${raw}" no es un número`);
+  if (!Number.isFinite(value)) throw new Error(`"${raw}" is not a valid number`);
   return Math.round(value);
 }
 
@@ -35,7 +46,7 @@ export function formatCount(n: number): string {
 export function bufferForTarget(limit: number, target: number): number {
   const buffer = limit - target;
   if (!Number.isInteger(buffer) || buffer <= 0) {
-    throw new Error(`target debe ser menor que el límite ${formatCount(limit)}`);
+    throw new Error(`target must be less than limit ${formatCount(limit)}`);
   }
   return buffer;
 }
@@ -43,11 +54,15 @@ export function bufferForTarget(limit: number, target: number): number {
 export function parseArgs(input: string): ConfigAction {
   const parts = input.trim().split(/\s+/).filter((p) => p.length > 0);
   if (parts.length === 0 || parts[0] === "status") {
-    if (parts.length > 1) throw new Error("uso: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n>]");
+    if (parts.length > 1) {
+      throw new Error("usage: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n|pct%>]");
+    }
     return { kind: "status" };
   }
   const [cmd, raw, ...rest] = parts;
-  if (rest.length > 0) throw new Error("uso: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n>]");
+  if (rest.length > 0) {
+    throw new Error("usage: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n|pct%>]");
+  }
   const normalized = cmd.toLowerCase();
   if ((normalized === "on" || normalized === "auto" || normalized === "reset" || normalized === "default") && raw === undefined) {
     return { kind: "auto", value: true };
@@ -57,12 +72,20 @@ export function parseArgs(input: string): ConfigAction {
     return { kind: normalized as "keep" | "buffer", value: parseCount(raw) };
   }
   if (normalized === "target" && raw !== undefined) {
+    if (raw.endsWith("%")) {
+      return { kind: "percent", value: parsePercent(raw) };
+    }
     return { kind: "target", value: parseCount(raw) };
   }
-  if (raw === undefined && /^(\d+(?:\.\d+)?)(k|m)?$/i.test(cmd)) {
-    return { kind: "target", value: parseCount(cmd) };
+  if (raw === undefined) {
+    if (cmd.endsWith("%")) {
+      return { kind: "percent", value: parsePercent(cmd) };
+    }
+    if (/^(\d+(?:\.\d+)?)(k|m)?$/i.test(cmd)) {
+      return { kind: "target", value: parseCount(cmd) };
+    }
   }
-  throw new Error("uso: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n>]");
+  throw new Error("usage: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n|pct%>]");
 }
 
 export function validate(entry: CompactionConfig, _ceiling?: number): string[] {
@@ -71,7 +94,7 @@ export function validate(entry: CompactionConfig, _ceiling?: number): string[] {
     ["keepTokens", entry.keepTokens],
     ["buffer", entry.buffer],
   ] as const) {
-    if (!Number.isInteger(v) || v < 0) errors.push(`${k} debe ser entero >= 0`);
+    if (!Number.isInteger(v) || v < 0) errors.push(`${k} must be an integer >= 0`);
   }
   return errors;
 }
@@ -84,10 +107,10 @@ export interface AdviseContext {
 export function advise(entry: CompactionConfig, ctx: AdviseContext): string[] {
   const warnings: string[] = [];
   if (ctx.ceiling !== undefined && entry.keepTokens > ctx.ceiling) {
-    warnings.push(`keep (${entry.keepTokens}) deja sin margen bajo el umbral ${ctx.ceiling}`);
+    warnings.push(`keep (${entry.keepTokens}) leaves no headroom below threshold ${ctx.ceiling}`);
   }
   if (ctx.inputLimit !== undefined && entry.buffer >= ctx.inputLimit) {
-    warnings.push(`buffer (${entry.buffer}) dispara el auto de inmediato con input limit ${ctx.inputLimit}`);
+    warnings.push(`buffer (${entry.buffer}) triggers autocompact immediately with input limit ${ctx.inputLimit}`);
   }
   return warnings;
 }

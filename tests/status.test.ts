@@ -1,23 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { threshold, usagePct, tone, autoBuffer } from "../src/autocompact/status";
+import {
+  threshold,
+  usagePct,
+  tone,
+  autoBuffer,
+  bufferForPercent,
+  renderProgressBar,
+} from "../src/autocompact/status";
 
 describe("threshold", () => {
-  it("usa input limit menos buffer", () => {
+  it("uses input limit minus buffer", () => {
     expect(threshold(128000, 200000, 32000, 20000)).toBe(108000);
   });
-  it("respeta context limit con output reserve", () => {
+  it("respects context limit with output reserve", () => {
     expect(threshold(500000, 200000, 32000, 20000)).toBe(168000);
   });
 });
 
 describe("usagePct", () => {
-  it("calcula porcentaje", () => {
+  it("calculates usage percentage", () => {
     expect(usagePct(54000, 108000)).toBe(50);
   });
 });
 
 describe("tone", () => {
-  it("ok < 75, warn < 90, hot el resto", () => {
+  it("classifies tone as ok < 75, warn < 90, and hot for the rest", () => {
     expect(tone(50)).toBe("ok");
     expect(tone(80)).toBe("warn");
     expect(tone(95)).toBe("hot");
@@ -38,3 +45,23 @@ describe("autoBuffer", () => {
   });
 });
 
+describe("bufferForPercent", () => {
+  it("calculates buffer given context limit and target percentage", () => {
+    expect(bufferForPercent(200000, 80)).toBe(40000);
+    expect(bufferForPercent(128000, 75)).toBe(32000);
+  });
+  it("throws on invalid percentage", () => {
+    expect(() => bufferForPercent(200000, 0)).toThrow();
+    expect(() => bufferForPercent(200000, 100)).toThrow();
+    expect(() => bufferForPercent(200000, 110)).toThrow();
+  });
+});
+
+describe("renderProgressBar", () => {
+  it("renders unicode progress bar correctly", () => {
+    expect(renderProgressBar(0, 100, 10)).toBe("░░░░░░░░░░");
+    expect(renderProgressBar(50, 100, 10)).toBe("█████░░░░░");
+    expect(renderProgressBar(100, 100, 10)).toBe("██████████");
+    expect(renderProgressBar(80, 100, 10)).toBe("████████░░");
+  });
+});
