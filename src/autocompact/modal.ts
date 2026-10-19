@@ -1,4 +1,4 @@
-import { RendererContext, createElement, insert, setProp, useKeyboard } from "@opentui/solid";
+import { RendererContext, createElement, insertNode, setProp, useKeyboard } from "@opentui/solid";
 import type { JSX } from "@opentui/solid";
 import { createComponent, createRenderEffect, createSignal } from "solid-js";
 import type { CompactionConfig } from "./config";
@@ -76,7 +76,7 @@ export function createModalState(options: ModalOptions) {
   };
 }
 
-function makeText(get: () => string, fg?: string): JSX.Element {
+function makeText(get: () => string, fg?: string): any {
   const node = createElement("text");
   if (fg) setProp(node, "fg", fg);
   const initial = get();
@@ -84,7 +84,7 @@ function makeText(get: () => string, fg?: string): JSX.Element {
   createRenderEffect(() => {
     setProp(node, "content", get());
   });
-  return node as unknown as JSX.Element;
+  return node;
 }
 
 export function renderModal(options: ModalOptions): JSX.Element {
@@ -114,7 +114,7 @@ export function renderModal(options: ModalOptions): JSX.Element {
     setProp(box, "title", "Auto-compact target");
 
     // Line 1: Header title
-    insert(
+    insertNode(
       box,
       makeText(
         () => `Model: ${options.modelName} (Context: ${formatCount(options.contextLimit)})`,
@@ -123,10 +123,10 @@ export function renderModal(options: ModalOptions): JSX.Element {
     );
 
     // Line 2: Empty spacer
-    insert(box, makeText(() => " "));
+    insertNode(box, makeText(() => " "));
 
     // Line 3: Target threshold
-    insert(
+    insertNode(
       box,
       makeText(
         () =>
@@ -136,10 +136,10 @@ export function renderModal(options: ModalOptions): JSX.Element {
     );
 
     // Line 4: Empty spacer
-    insert(box, makeText(() => " "));
+    insertNode(box, makeText(() => " "));
 
     // Line 5: Interactive Slider
-    insert(
+    insertNode(
       box,
       makeText(
         () => `[◀]  [${state.progressBar()}]  ${state.percent()}%  [▶]  (Step: ±5%)`,
@@ -148,10 +148,10 @@ export function renderModal(options: ModalOptions): JSX.Element {
     );
 
     // Line 6: Empty spacer
-    insert(box, makeText(() => " "));
+    insertNode(box, makeText(() => " "));
 
     // Line 7: Buffer info
-    insert(
+    insertNode(
       box,
       makeText(
         () => `Free margin (buffer):  ${formatCount(state.bufferTokens())} tokens`,
@@ -160,7 +160,7 @@ export function renderModal(options: ModalOptions): JSX.Element {
     );
 
     // Line 8: Keep info
-    insert(
+    insertNode(
       box,
       makeText(
         () => `Retained context:      ${formatCount(options.current.keepTokens)} tokens`,
@@ -169,10 +169,10 @@ export function renderModal(options: ModalOptions): JSX.Element {
     );
 
     // Line 9: Empty spacer
-    insert(box, makeText(() => " "));
+    insertNode(box, makeText(() => " "));
 
     // Line 10: Shortcut buttons
-    insert(
+    insertNode(
       box,
       makeText(
         () => `[Enter] Apply   [A] Reset to Auto   [Esc] Close`,

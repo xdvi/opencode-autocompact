@@ -320,7 +320,31 @@ export default Plugin.define({
         context.ui.dialog.clear();
       },
       theme: {
-        text: context.theme.text,
+        text: {
+          base:
+            (typeof (context.theme as any)?.surface === "function"
+              ? (context.theme as any).surface("dialog")?.text?.base
+              : undefined) ??
+            (typeof (context.theme as any)?.text === "object" ? (context.theme as any)?.text?.base : undefined) ??
+            (typeof context.theme?.text === "string" ? context.theme.text : undefined) ??
+            "#ffffff",
+          muted:
+            (typeof (context.theme as any)?.surface === "function"
+              ? (context.theme as any).surface("dialog")?.text?.muted
+              : undefined) ??
+            (typeof (context.theme as any)?.text === "object" ? (context.theme as any)?.text?.muted : undefined) ??
+            (typeof (context.theme as any)?.muted === "string" ? (context.theme as any).muted : undefined) ??
+            "#888888",
+        },
+        border: {
+          base:
+            (typeof (context.theme as any)?.surface === "function"
+              ? (context.theme as any).surface("dialog")?.border?.base
+              : undefined) ??
+            (typeof (context.theme as any)?.border === "object" ? (context.theme as any)?.border?.base : undefined) ??
+            (typeof (context.theme as any)?.border === "string" ? (context.theme as any).border : undefined) ??
+            "#555555",
+        },
       },
     };
 
