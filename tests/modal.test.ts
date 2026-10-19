@@ -105,7 +105,7 @@ describe("createModalState", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("renders modal structure without throwing when renderer is provided", () => {
+  it("renders modal structure with populated title and text content", () => {
     const mockRenderer = {
       requestRender: vi.fn(),
       widthMethod: 0,
@@ -126,5 +126,24 @@ describe("createModalState", () => {
     });
 
     expect(modal).toBeDefined();
+
+    const boxFn = typeof modal === "function" ? (modal as any)() : (modal as any).children;
+    const box = typeof boxFn === "function" ? boxFn() : boxFn;
+    expect(box.title).toBe("Auto-compact target");
+
+    const children = box.getChildren();
+    expect(children.length).toBe(10);
+
+    const textAt = (index: number) => {
+      const child = children[index];
+      return child?.content?.chunks?.map((c: any) => c.text).join("") ?? "";
+    };
+
+    expect(textAt(0)).toContain("Model: llama-3.3-70b");
+    expect(textAt(2)).toContain("Target threshold:  80%");
+    expect(textAt(4)).toContain("[◀]");
+    expect(textAt(6)).toContain("Free margin (buffer):");
+    expect(textAt(7)).toContain("Retained context:");
+    expect(textAt(9)).toContain("[Enter] Apply");
   });
 });

@@ -1,6 +1,6 @@
 import { RendererContext, createElement, insert, setProp, useKeyboard } from "@opentui/solid";
 import type { JSX } from "@opentui/solid";
-import { createComponent, createSignal } from "solid-js";
+import { createComponent, createRenderEffect, createSignal } from "solid-js";
 import type { CompactionConfig } from "./config";
 import { formatCount } from "./config";
 import { autoBuffer, bufferForPercent, renderProgressBar } from "./status";
@@ -79,7 +79,11 @@ export function createModalState(options: ModalOptions) {
 function makeText(get: () => string, fg?: string): JSX.Element {
   const node = createElement("text");
   if (fg) setProp(node, "fg", fg);
-  insert(node, get);
+  const initial = get();
+  setProp(node, "content", initial);
+  createRenderEffect(() => {
+    setProp(node, "content", get());
+  });
   return node as unknown as JSX.Element;
 }
 
@@ -107,6 +111,7 @@ export function renderModal(options: ModalOptions): JSX.Element {
     setProp(box, "paddingTop", 1);
     setProp(box, "paddingBottom", 1);
     setProp(box, "width", 68);
+    setProp(box, "title", "Auto-compact target");
 
     // Line 1: Header title
     insert(

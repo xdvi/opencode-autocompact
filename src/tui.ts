@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Plugin } from "@opencode/plugin/tui";
 import { RendererContext, createElement, insert, setProp } from "@opentui/solid";
 import type { JSX } from "@opentui/solid";
-import { createComponent } from "solid-js";
+import { createComponent, createRenderEffect } from "solid-js";
 import {
   advise,
   bufferForTarget,
@@ -41,6 +41,8 @@ function withRenderer(renderer: unknown, render: () => JSX.Element): JSX.Element
 
 function textLine(get: () => string): JSX.Element {
   const node = createElement("text");
+  const initial = get();
+  setProp(node, "content", initial);
   insert(node, get);
   return node as unknown as JSX.Element;
 }
@@ -50,9 +52,11 @@ function footerPill(muted: string, base: string, label: string, value: string): 
   setProp(box, "flexDirection", "row");
   const left = createElement("text");
   setProp(left, "fg", muted);
+  setProp(left, "content", label);
   insert(left, label);
   const right = createElement("text");
   setProp(right, "fg", base);
+  setProp(right, "content", value);
   insert(right, value);
   insert(box, left);
   insert(box, right);
