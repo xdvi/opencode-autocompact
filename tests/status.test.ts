@@ -57,6 +57,19 @@ describe("bufferForPercent", () => {
   });
 });
 
+describe("isValidPercent", () => {
+  it("validates percentages between 1 and 99", async () => {
+    const { isValidPercent } = await import("../src/autocompact/status");
+    expect(isValidPercent(50)).toBe(true);
+    expect(isValidPercent(1)).toBe(true);
+    expect(isValidPercent(99)).toBe(true);
+    expect(isValidPercent(0)).toBe(false);
+    expect(isValidPercent(100)).toBe(false);
+    expect(isValidPercent(-5)).toBe(false);
+    expect(isValidPercent(NaN)).toBe(false);
+  });
+});
+
 describe("renderProgressBar", () => {
   it("renders unicode progress bar correctly", () => {
     expect(renderProgressBar(0, 100, 10)).toBe("░░░░░░░░░░");

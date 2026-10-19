@@ -12,7 +12,7 @@ import {
   parseArgs,
   readDoc,
 } from "./autocompact/config";
-import type { CompactionFile } from "./autocompact/config";
+import type { CompactionConfig, CompactionFile, ConfigAction } from "./autocompact/config";
 import { threshold, autoBuffer, bufferForPercent, renderProgressBar } from "./autocompact/status";
 
 function resolveConfig(): string {
@@ -50,6 +50,79 @@ function footerPill(muted: string, base: string, label: string, value: string): 
 interface SeenLimit {
   limit: number;
 }
+
+export interface ActionContext {
+  getLimit: () => number;
+  readCurrent: () => CompactionConfig;
+  savePatch: (patch: Partial<CompactionConfig>) => Promise<CompactionConfig>;
+  toast: (message: string, variant?: "info" | "success" | "warning" | "error") => void;
+  alert: (message: string) => Promise<void>;
+}
+
+export type ActionHandler<K extends ConfigAction["kind"]> = (
+  action: Extract<ConfigAction, { kind: K }>,
+  ctx: ActionContext,
+) => Promise<void>;
+
+export const ACTION_HANDLERS: { [K in ConfigAction["kind"]]: ActionHandler<K> } = {
+  status: async (_action, ctx) => {
+    const current = ctx.readCurrent();
+    const limit = ctx.getLimit();
+    const detail =
+      limit > 0
+        ? `${formatCount(limit)} − ${formatCount(current.buffer)} = @${formatCount(limit - current.buffer)}`
+        : `keep:${formatCount(current.keepTokens)} buffer:${formatCount(current.buffer)}`;
+    ctx.toast(`auto:${current.auto ? "on" : "off"}\n${detail}`);
+  },
+
+  target: async (action, ctx) => {
+    const limit = ctx.getLimit();
+    if (limit <= 0) {
+      await ctx.alert("no model detected: open a session first");
+      return;
+    }
+    const buffer = bufferForTarget(limit, action.value);
+    await ctx.savePatch({ buffer });
+    ctx.toast(`${formatCount(limit)} − ${formatCount(buffer)} = @${formatCount(action.value)}`, "success");
+  },
+
+  percent: async (action, ctx) => {
+    const limit = ctx.getLimit();
+    if (limit <= 0) {
+      await ctx.alert("no model detected: open a session first");
+      return;
+    }
+    const buffer = bufferForPercent(limit, action.value);
+    await ctx.savePatch({ buffer });
+    ctx.toast(
+      `${formatCount(limit)} − ${formatCount(buffer)} = ${action.value}% (@${formatCount(limit - buffer)})`,
+      "success",
+    );
+  },
+
+  auto: async (action, ctx) => {
+    const patch: Partial<CompactionConfig> = { auto: action.value };
+    if (action.value) {
+      const limit = ctx.getLimit();
+      if (limit > 0) {
+        patch.buffer = autoBuffer(limit);
+      }
+    }
+    const next = await ctx.savePatch(patch);
+    const bufferNote = patch.buffer ? ` buffer:${formatCount(patch.buffer)}` : "";
+    ctx.toast(`autocompact updated auto:${next.auto ? "on" : "off"}${bufferNote}`, "success");
+  },
+
+  keep: async (action, ctx) => {
+    const next = await ctx.savePatch({ keepTokens: action.value });
+    ctx.toast(`autocompact updated auto:${next.auto ? "on" : "off"}`, "success");
+  },
+
+  buffer: async (action, ctx) => {
+    const next = await ctx.savePatch({ buffer: action.value });
+    ctx.toast(`autocompact updated auto:${next.auto ? "on" : "off"} buffer:${formatCount(action.value)}`, "success");
+  },
+};
 
 export default Plugin.define({
   id: "autocompact.cli",
@@ -159,146 +232,64 @@ export default Plugin.define({
       }
     };
 
+    const ensureLimit = (): number => {
+      if (seen.limit <= 0) limitFor(currentSessionID());
+      return seen.limit;
+    };
+
+    const actionContext: ActionContext = {
+      getLimit: ensureLimit,
+      readCurrent,
+      savePatch: async (patch) => {
+        const next = await persist(resolveConfig(), patch);
+        await setState((draft) => {
+          draft.rev += 1;
+        });
+        for (const warning of advise(next, {})) {
+          context.ui.toast.show({ message: warning, variant: "warning" });
+        }
+        return next;
+      },
+      toast: (message, variant) => {
+        context.ui.toast.show({ message, variant });
+      },
+      alert: async (message) => {
+        await context.ui.dialog.alert({ title: "autocompact", message });
+      },
+    };
+
+    const runAction = async (raw?: string) => {
+      try {
+        const action = parseArgs(raw ?? "");
+        const handler = ACTION_HANDLERS[action.kind] as ActionHandler<typeof action.kind>;
+        await handler(action, actionContext);
+      } catch (error) {
+        await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
+      }
+    };
+
+    const COMMAND_SPECS = [
+      { id: "autocompact.run", title: "autocompact on|off|status|reset|keep|buffer|target", slash: "autocompact", args: true, run: (raw?: string) => runAction(raw) },
+      { id: "autocompact.on", title: "autocompact on", slash: "autocompact:on", run: () => runAction("on") },
+      { id: "autocompact.off", title: "autocompact off", slash: "autocompact:off", run: () => runAction("off") },
+      { id: "autocompact.reset", title: "autocompact reset", slash: "autocompact:reset", run: () => runAction("reset") },
+      { id: "autocompact.status", title: "autocompact status", slash: "autocompact:status", run: () => runAction("status") },
+      { id: "autocompact.target", title: "autocompact target <n|pct%>", slash: "autocompact:target", args: true, run: (raw?: string) => runAction(`target ${raw ?? ""}`) },
+      { id: "autocompact.keep", title: "autocompact keep <n>", slash: "autocompact:keep", args: true, run: (raw?: string) => runAction(`keep ${raw ?? ""}`) },
+      { id: "autocompact.buffer", title: "autocompact buffer <n>", slash: "autocompact:buffer", args: true, run: (raw?: string) => runAction(`buffer ${raw ?? ""}`) },
+    ];
+
     const offApp = context.ui.slot({
       append: "app",
       render: () => {
-        const runAction = async (raw?: string) => {
-          let action;
-          try {
-            action = parseArgs(raw ?? "");
-          } catch (error) {
-            await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
-            return;
-          }
-          if (action.kind === "status") {
-            try {
-              if (seen.limit <= 0) limitFor(currentSessionID());
-              const current = readCurrent();
-              const limit = seen.limit;
-              const detail =
-                limit > 0
-                  ? `${formatCount(limit)} − ${formatCount(current.buffer)} = @${formatCount(limit - current.buffer)}`
-                  : `keep:${formatCount(current.keepTokens)} buffer:${formatCount(current.buffer)}`;
-              context.ui.toast.show({ message: `auto:${current.auto ? "on" : "off"}\n${detail}` });
-            } catch (error) {
-              await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
-            }
-            return;
-          }
-          try {
-            if (action.kind === "target" || action.kind === "percent") {
-              let limit = seen.limit;
-              if (limit <= 0) limit = limitFor(currentSessionID());
-              if (limit <= 0) {
-                await context.ui.dialog.alert({
-                  title: "autocompact",
-                  message: "no model detected: open a session first",
-                });
-                return;
-              }
-              let buffer: number;
-              let targetDisplay: string;
-              if (action.kind === "percent") {
-                buffer = bufferForPercent(limit, action.value);
-                targetDisplay = `${action.value}% (@${formatCount(limit - buffer)})`;
-              } else {
-                buffer = bufferForTarget(limit, action.value);
-                targetDisplay = `@${formatCount(action.value)}`;
-              }
-              const next = await persist(resolveConfig(), { buffer });
-              await setState((draft) => {
-                draft.rev += 1;
-              });
-              context.ui.toast.show({
-                message: `${formatCount(limit)} − ${formatCount(buffer)} = ${targetDisplay}`,
-                variant: "success",
-              });
-              void next;
-              return;
-            }
-            let patch: Partial<import("./autocompact/config").CompactionConfig>;
-            if (action.kind === "auto") {
-              patch = { auto: action.value };
-              if (action.value) {
-                let limit = seen.limit;
-                if (limit <= 0) limit = limitFor(currentSessionID());
-                if (limit > 0) {
-                  patch.buffer = autoBuffer(limit);
-                }
-              }
-            } else if (action.kind === "keep") {
-              patch = { keepTokens: action.value };
-            } else {
-              patch = { buffer: action.value };
-            }
-            const next = await persist(resolveConfig(), patch);
-            await setState((draft) => {
-              draft.rev += 1;
-            });
-            for (const warning of advise(next, {})) {
-              context.ui.toast.show({ message: warning, variant: "warning" });
-            }
-            const bufferNote = patch.buffer ? ` buffer:${formatCount(patch.buffer)}` : "";
-            context.ui.toast.show({
-              message: `autocompact updated auto:${next.auto ? "on" : "off"}${bufferNote}`,
-              variant: "success",
-            });
-          } catch (error) {
-            await context.ui.dialog.alert({ title: "autocompact", message: friendly(error) });
-          }
-        };
         context.keymap.layer(() => ({
           mode: "global",
-          commands: [
-            {
-              id: "autocompact.run",
-              title: "autocompact on|off|status|reset|keep|buffer|target",
-              slash: { name: "autocompact", arguments: true },
-              run: (input) => runAction(input),
-            },
-            {
-              id: "autocompact.on",
-              title: "autocompact on",
-              slash: { name: "autocompact:on" },
-              run: () => runAction("on"),
-            },
-            {
-              id: "autocompact.off",
-              title: "autocompact off",
-              slash: { name: "autocompact:off" },
-              run: () => runAction("off"),
-            },
-            {
-              id: "autocompact.reset",
-              title: "autocompact reset",
-              slash: { name: "autocompact:reset" },
-              run: () => runAction("reset"),
-            },
-            {
-              id: "autocompact.status",
-              title: "autocompact status",
-              slash: { name: "autocompact:status" },
-              run: () => runAction("status"),
-            },
-            {
-              id: "autocompact.target",
-              title: "autocompact target <n|pct%>",
-              slash: { name: "autocompact:target", arguments: true },
-              run: (input) => runAction(`target ${input ?? ""}`),
-            },
-            {
-              id: "autocompact.keep",
-              title: "autocompact keep <n>",
-              slash: { name: "autocompact:keep", arguments: true },
-              run: (input) => runAction(`keep ${input ?? ""}`),
-            },
-            {
-              id: "autocompact.buffer",
-              title: "autocompact buffer <n>",
-              slash: { name: "autocompact:buffer", arguments: true },
-              run: (input) => runAction(`buffer ${input ?? ""}`),
-            },
-          ],
+          commands: COMMAND_SPECS.map((spec) => ({
+            id: spec.id,
+            title: spec.title,
+            slash: spec.args ? { name: spec.slash, arguments: true } : { name: spec.slash },
+            run: spec.run,
+          })),
         }));
         return textLine(() => "");
       },

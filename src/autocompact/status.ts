@@ -32,8 +32,12 @@ export function autoBuffer(contextLimit: number): number {
   return Math.min(50000, Math.round(contextLimit * 0.1));
 }
 
+export function isValidPercent(percent: number): boolean {
+  return Number.isFinite(percent) && percent > 0 && percent < 100;
+}
+
 export function bufferForPercent(limit: number, percent: number): number {
-  if (!Number.isFinite(percent) || percent <= 0 || percent >= 100) {
+  if (!isValidPercent(percent)) {
     throw new Error(`percent must be between 1 and 99 (received ${percent}%)`);
   }
   const target = Math.round((limit * percent) / 100);

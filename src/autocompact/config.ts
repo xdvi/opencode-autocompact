@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { isValidPercent } from "./status";
 
 export interface CompactionConfig {
   auto: boolean;
@@ -7,6 +8,9 @@ export interface CompactionConfig {
 }
 
 export const DEFAULTS: CompactionConfig = { auto: true, keepTokens: 15000, buffer: 20000 };
+
+export const USAGE_MESSAGE =
+  "usage: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n|pct%>]";
 
 export type ConfigAction =
   | { kind: "status" }
@@ -20,7 +24,7 @@ function parsePercent(raw: string): number {
   const match = /^(\d+(?:\.\d+)?)%$/.exec(raw.trim());
   if (!match) throw new Error(`"${raw}" is not a valid percentage (use e.g. 80%)`);
   const val = Number(match[1]);
-  if (!Number.isFinite(val) || val <= 0 || val >= 100) {
+  if (!isValidPercent(val)) {
     throw new Error(`percentage must be between 1 and 99 (received ${raw})`);
   }
   return Math.round(val);
@@ -51,41 +55,51 @@ export function bufferForTarget(limit: number, target: number): number {
   return buffer;
 }
 
+type ArgMatcher = (parts: string[]) => ConfigAction | undefined;
+
+const ARG_PARSERS: ArgMatcher[] = [
+  (parts) => {
+    if (parts.length === 0 || (parts.length === 1 && parts[0].toLowerCase() === "status")) {
+      return { kind: "status" };
+    }
+  },
+  (parts) => {
+    if (parts.length === 1) {
+      const cmd = parts[0].toLowerCase();
+      if (["on", "auto", "reset", "default"].includes(cmd)) return { kind: "auto", value: true };
+      if (cmd === "off") return { kind: "auto", value: false };
+    }
+  },
+  (parts) => {
+    if (parts.length === 2) {
+      const cmd = parts[0].toLowerCase();
+      if (cmd === "keep" || cmd === "buffer") {
+        return { kind: cmd, value: parseCount(parts[1]) };
+      }
+      if (cmd === "target") {
+        const val = parts[1];
+        return val.endsWith("%")
+          ? { kind: "percent", value: parsePercent(val) }
+          : { kind: "target", value: parseCount(val) };
+      }
+    }
+  },
+  (parts) => {
+    if (parts.length === 1) {
+      const val = parts[0];
+      if (val.endsWith("%")) return { kind: "percent", value: parsePercent(val) };
+      if (/^(\d+(?:\.\d+)?)(k|m)?$/i.test(val)) return { kind: "target", value: parseCount(val) };
+    }
+  },
+];
+
 export function parseArgs(input: string): ConfigAction {
   const parts = input.trim().split(/\s+/).filter((p) => p.length > 0);
-  if (parts.length === 0 || parts[0] === "status") {
-    if (parts.length > 1) {
-      throw new Error("usage: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n|pct%>]");
-    }
-    return { kind: "status" };
+  for (const parser of ARG_PARSERS) {
+    const action = parser(parts);
+    if (action) return action;
   }
-  const [cmd, raw, ...rest] = parts;
-  if (rest.length > 0) {
-    throw new Error("usage: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n|pct%>]");
-  }
-  const normalized = cmd.toLowerCase();
-  if ((normalized === "on" || normalized === "auto" || normalized === "reset" || normalized === "default") && raw === undefined) {
-    return { kind: "auto", value: true };
-  }
-  if (normalized === "off" && raw === undefined) return { kind: "auto", value: false };
-  if ((normalized === "keep" || normalized === "buffer") && raw !== undefined) {
-    return { kind: normalized as "keep" | "buffer", value: parseCount(raw) };
-  }
-  if (normalized === "target" && raw !== undefined) {
-    if (raw.endsWith("%")) {
-      return { kind: "percent", value: parsePercent(raw) };
-    }
-    return { kind: "target", value: parseCount(raw) };
-  }
-  if (raw === undefined) {
-    if (cmd.endsWith("%")) {
-      return { kind: "percent", value: parsePercent(cmd) };
-    }
-    if (/^(\d+(?:\.\d+)?)(k|m)?$/i.test(cmd)) {
-      return { kind: "target", value: parseCount(cmd) };
-    }
-  }
-  throw new Error("usage: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n|pct%>]");
+  throw new Error(USAGE_MESSAGE);
 }
 
 export function validate(entry: CompactionConfig, _ceiling?: number): string[] {
