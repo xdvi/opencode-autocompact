@@ -10,9 +10,10 @@ export interface CompactionConfig {
 export const DEFAULTS: CompactionConfig = { auto: true, keepTokens: 15000, buffer: 20000 };
 
 export const USAGE_MESSAGE =
-  "usage: /autocompact [auto|on|off|status|reset|keep <n>|buffer <n>|target <n|pct%>]";
+  "usage: /autocompact [ui|status|auto|on|off|reset|keep <n>|buffer <n>|target <n|pct%>]";
 
 export type ConfigAction =
+  | { kind: "ui" }
   | { kind: "status" }
   | { kind: "auto"; value: boolean }
   | { kind: "keep"; value: number }
@@ -59,7 +60,10 @@ type ArgMatcher = (parts: string[]) => ConfigAction | undefined;
 
 const ARG_PARSERS: ArgMatcher[] = [
   (parts) => {
-    if (parts.length === 0 || (parts.length === 1 && parts[0].toLowerCase() === "status")) {
+    if (parts.length === 0 || (parts.length === 1 && parts[0].toLowerCase() === "ui")) {
+      return { kind: "ui" };
+    }
+    if (parts.length === 1 && parts[0].toLowerCase() === "status") {
       return { kind: "status" };
     }
   },

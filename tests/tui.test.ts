@@ -150,7 +150,7 @@ describe("autocompact.cli plugin", () => {
           }
           return vi.fn();
         }),
-        dialog: { alert: alertSpy },
+        dialog: { alert: alertSpy, show: vi.fn(), set: vi.fn(), clear: vi.fn() },
         toast: { show: toastSpy },
       },
       keymap: {
@@ -167,31 +167,40 @@ describe("autocompact.cli plugin", () => {
     const runCmd = capturedLayer.commands.find((c: any) => c.id === "autocompact.run");
     expect(runCmd).toBeDefined();
 
-    // 1. Status
+    // 1. UI Modal via empty or ui
+    await runCmd.run("");
+    expect(mockContext.ui.dialog.show).toHaveBeenCalled();
+    expect(mockContext.ui.dialog.set).toHaveBeenCalledWith({ size: "medium", centered: true });
+
+    mockContext.ui.dialog.show.mockClear();
+    await runCmd.run("ui");
+    expect(mockContext.ui.dialog.show).toHaveBeenCalled();
+
+    // 2. Status
     await runCmd.run("status");
     expect(toastSpy).toHaveBeenCalled();
     expect(toastSpy.mock.calls[0][0].message).toContain("auto:on");
 
-    // 2. Percentage target
+    // 3. Percentage target
     toastSpy.mockClear();
     await runCmd.run("target 80%");
     expect(toastSpy).toHaveBeenCalled();
     expect(toastSpy.mock.calls[0][0].message).toContain("80%");
     expect(toastSpy.mock.calls[0][0].variant).toBe("success");
 
-    // 3. Absolute target
+    // 4. Absolute target
     toastSpy.mockClear();
     await runCmd.run("target 150k");
     expect(toastSpy).toHaveBeenCalled();
     expect(toastSpy.mock.calls[0][0].message).toContain("@150k");
 
-    // 4. Reset
+    // 5. Reset
     toastSpy.mockClear();
     await runCmd.run("reset");
     expect(toastSpy).toHaveBeenCalled();
     expect(toastSpy.mock.calls[0][0].message).toContain("autocompact updated auto:on");
 
-    // 5. Invalid command syntax shows alert in English
+    // 6. Invalid command syntax shows alert in English
     alertSpy.mockClear();
     await runCmd.run("invalid_arg 123 456");
     expect(alertSpy).toHaveBeenCalled();

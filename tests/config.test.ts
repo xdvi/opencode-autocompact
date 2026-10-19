@@ -20,8 +20,9 @@ describe("parseArgs", () => {
     expect(parseArgs("buffer 16000")).toEqual({ kind: "buffer", value: 16000 });
   });
 
-  it("empty input defaults to status", () => {
-    expect(parseArgs("")).toEqual({ kind: "status" });
+  it("empty input or ui opens interactive ui", () => {
+    expect(parseArgs("")).toEqual({ kind: "ui" });
+    expect(parseArgs("ui")).toEqual({ kind: "ui" });
   });
 
   it("rejects non-finite values and extraneous tokens", () => {

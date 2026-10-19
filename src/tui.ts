@@ -14,6 +14,7 @@ import {
 } from "./autocompact/config";
 import type { CompactionConfig, CompactionFile, ConfigAction } from "./autocompact/config";
 import { threshold, autoBuffer, bufferForPercent, renderProgressBar } from "./autocompact/status";
+import { renderModal } from "./autocompact/modal";
 
 function resolveConfig(): string {
   const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config", "opencode");
@@ -53,10 +54,14 @@ interface SeenLimit {
 
 export interface ActionContext {
   getLimit: () => number;
+  getModelName: () => string;
   readCurrent: () => CompactionConfig;
   savePatch: (patch: Partial<CompactionConfig>) => Promise<CompactionConfig>;
   toast: (message: string, variant?: "info" | "success" | "warning" | "error") => void;
   alert: (message: string) => Promise<void>;
+  showModal: (render: () => JSX.Element, onClose?: () => void) => void;
+  closeModal: () => void;
+  theme: { text: { base: string; muted: string }; border?: { base: string } };
 }
 
 export type ActionHandler<K extends ConfigAction["kind"]> = (
@@ -65,6 +70,31 @@ export type ActionHandler<K extends ConfigAction["kind"]> = (
 ) => Promise<void>;
 
 export const ACTION_HANDLERS: { [K in ConfigAction["kind"]]: ActionHandler<K> } = {
+  ui: async (_action, ctx) => {
+    const limit = ctx.getLimit();
+    if (limit <= 0) {
+      await ctx.alert("no model detected: open a session first");
+      return;
+    }
+    const current = ctx.readCurrent();
+    const modelName = ctx.getModelName();
+    ctx.showModal(() =>
+      renderModal({
+        modelName,
+        contextLimit: limit,
+        current,
+        theme: ctx.theme,
+        onSave: async (patch) => {
+          await ctx.savePatch(patch);
+        },
+        onClose: () => {
+          ctx.closeModal();
+        },
+        toast: ctx.toast,
+      }),
+    );
+  },
+
   status: async (_action, ctx) => {
     const current = ctx.readCurrent();
     const limit = ctx.getLimit();
@@ -237,8 +267,16 @@ export default Plugin.define({
       return seen.limit;
     };
 
+    const getModelName = (): string => {
+      const sid = currentSessionID();
+      if (!sid) return "default";
+      const session = context.data.session.get(sid);
+      return session?.model?.id ?? "default";
+    };
+
     const actionContext: ActionContext = {
       getLimit: ensureLimit,
+      getModelName,
       readCurrent,
       savePatch: async (patch) => {
         const next = await persist(resolveConfig(), patch);
@@ -256,6 +294,16 @@ export default Plugin.define({
       alert: async (message) => {
         await context.ui.dialog.alert({ title: "autocompact", message });
       },
+      showModal: (render, onClose) => {
+        context.ui.dialog.set({ size: "medium", centered: true });
+        context.ui.dialog.show(render, onClose);
+      },
+      closeModal: () => {
+        context.ui.dialog.clear();
+      },
+      theme: {
+        text: context.theme.text,
+      },
     };
 
     const runAction = async (raw?: string) => {
@@ -269,7 +317,8 @@ export default Plugin.define({
     };
 
     const COMMAND_SPECS = [
-      { id: "autocompact.run", title: "autocompact on|off|status|reset|keep|buffer|target", slash: "autocompact", args: true, run: (raw?: string) => runAction(raw) },
+      { id: "autocompact.run", title: "autocompact [ui|status|on|off|reset|keep|buffer|target]", slash: "autocompact", args: true, run: (raw?: string) => runAction(raw) },
+      { id: "autocompact.ui", title: "autocompact ui", slash: "autocompact:ui", run: () => runAction("ui") },
       { id: "autocompact.on", title: "autocompact on", slash: "autocompact:on", run: () => runAction("on") },
       { id: "autocompact.off", title: "autocompact off", slash: "autocompact:off", run: () => runAction("off") },
       { id: "autocompact.reset", title: "autocompact reset", slash: "autocompact:reset", run: () => runAction("reset") },
